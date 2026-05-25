@@ -16,5 +16,11 @@
     "title": "La Princesse Naëlys et le Mystère du Royaume des Chats",
     "thumbnail": "https://images.unsplash.com/photo-1519098901909-b1553a1190af?auto=format&fit=crop&w=200&q=80",
     "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/56c1a30d-cfb2-487d-8574-d6f3520ae747.mp3"
+  },
+  {
+    "id": "618d5fc9-dfab-479a-aa46-c814c20924b8",
+    "title": "Jack et le haricot magique",
+    "thumbnail": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/d869fff3-4e66-4105-906f-8081142ec9b1.png",
+    "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/d869fff3-4e66-4105-906f-8081142ec9b1.mp3"
   }
 ]
