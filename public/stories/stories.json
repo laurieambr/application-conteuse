@@ -10,5 +10,11 @@
     "title": "La forêt magique",
     "thumbnail": "https://images.unsplash.com/photo-1542273917363-3b1817f69a56?auto=format&fit=crop&w=200&q=80",
     "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
+  },
+  {
+    "id": "d26f6514-7f6b-4557-8f15-dc9df57b8d68",
+    "title": "La Princesse Naëlys et le Mystère du Royaume des Chats",
+    "thumbnail": "https://images.unsplash.com/photo-1519098901909-b1553a1190af?auto=format&fit=crop&w=200&q=80",
+    "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/56c1a30d-cfb2-487d-8574-d6f3520ae747.mp3"
   }
 ]
