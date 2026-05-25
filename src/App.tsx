@@ -19,8 +19,8 @@ export default function App() {
         
         {/* Tab Content */}
         {activeTab === "bibliotheque" && <LibraryView />}
-        {activeTab === "inventer" && <InventerView />}
-        {activeTab === "importer" && <ImporterView />}
+        {activeTab === "inventer" && <InventerView setActiveTab={setActiveTab} />}
+        {activeTab === "importer" && <ImporterView setActiveTab={setActiveTab} />}
 
         {/* Bottom Navigation */}
         <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />

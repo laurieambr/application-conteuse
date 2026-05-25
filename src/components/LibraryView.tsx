@@ -8,7 +8,7 @@ export function LibraryView() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/stories/stories.json")
+    fetch("/api/stories")
       .then((res) => {
         if (!res.ok) throw new Error("Erreur de chargement");
         return res.json();

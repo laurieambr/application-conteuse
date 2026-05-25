@@ -4,9 +4,15 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 import ffmpeg from "fluent-ffmpeg";
+import ffmpegStatic from "ffmpeg-static";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { randomUUID } from "crypto";
 import { createServer as createViteServer } from "vite";
+
+// Définir le chemin vers l'exécutable ffmpeg statique
+if (ffmpegStatic) {
+  ffmpeg.setFfmpegPath(ffmpegStatic);
+}
 
 const app = express();
 const PORT = 3000;
@@ -22,21 +28,11 @@ const ai = new GoogleGenAI({});
 // ==== DOSSIERS & STOCKAGE ====
 const rootDir = process.cwd();
 const publicDir = path.join(rootDir, "public");
-const publicStoriesDir = path.join(publicDir, "stories");
 const tempDir = path.join(rootDir, "temp");
 
-// S'assurer que les dossiers existent
-if (!fs.existsSync(publicStoriesDir)) {
-  fs.mkdirSync(publicStoriesDir, { recursive: true });
-}
+// S'assurer que le dossier temporaire existe pour ffmpeg et multer
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
-}
-
-// Fichier stories.json
-const storiesJsonPath = path.join(publicStoriesDir, "stories.json");
-if (!fs.existsSync(storiesJsonPath)) {
-  fs.writeFileSync(storiesJsonPath, "[]", "utf-8");
 }
 
 // Servir statiquement le dossier public
@@ -53,9 +49,26 @@ const upload = multer({ dest: tempDir });
  * avec les paramètres très stricts requis par l'ESP32 :
  * MP3, codec libmp3lame, 128 kbps CBR, 44100 Hz, Mono (1 canal), sans métadonnées.
  */
-const convertToEsp32Audio = (inputPath: string, outputPath: string): Promise<void> => {
+const convertToEsp32Audio = (inputPath: string, outputPath: string, inputMimeType?: string, isRawPcm?: boolean): Promise<void> => {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    let command = ffmpeg(inputPath);
+    
+    if (isRawPcm || (inputMimeType && inputMimeType.includes("pcm"))) {
+      // By default Gemini TTS returns 24000Hz PCM
+      let rate = 24000;
+      if (inputMimeType) {
+        const rateMatch = inputMimeType.match(/rate=(\d+)/);
+        if (rateMatch) rate = parseInt(rateMatch[1]);
+      }
+      
+      command = command.inputOptions([
+        '-f', 's16le',
+        '-ar', rate.toString(),
+        '-ac', '1'
+      ]);
+    }
+
+    command
       .audioCodec("libmp3lame")
       .audioBitrate("128k")       // 128 kbps CBR
       .audioChannels(1)           // Mono
@@ -69,33 +82,116 @@ const convertToEsp32Audio = (inputPath: string, outputPath: string): Promise<voi
   });
 };
 
-const addStoryToJson = (title: string, url: string, thumbnail?: string) => {
-  let stories = [];
-  try {
-    const data = fs.readFileSync(storiesJsonPath, "utf-8");
-    stories = JSON.parse(data);
-  } catch (err) {
-    console.error("Erreur lecture stories.json", err);
+// ==== GITHUB API UTILS ====
+const GITHUB_OWNER = 'laurieambr';
+const GITHUB_REPO = 'application-conteuse';
+const GITHUB_BRANCH = 'main';
+
+async function getGithubFileSha(path: string): Promise<string | null> {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN manquant ou non défini dans les secrets");
+  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_BRANCH}`;
+  const response = await fetch(url, {
+    headers: {
+      "Authorization": `token ${token}`,
+      "Accept": "application/vnd.github.v3+json",
+      "User-Agent": "Conteuse-App"
+    }
+  });
+
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Github API error: ${response.statusText}`);
+  const data = (await response.json()) as any;
+  return data.sha;
+}
+
+async function uploadToGithub(path: string, contentBase64: string, message: string) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN manquant");
+  const sha = await getGithubFileSha(path);
+  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
+  
+  const body: any = {
+    message: message,
+    content: contentBase64,
+    branch: GITHUB_BRANCH
+  };
+  
+  if (sha) {
+    body.sha = sha;
   }
+  
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      "Authorization": `token ${token}`,
+      "Accept": "application/vnd.github.v3+json",
+      "Content-Type": "application/json",
+      "User-Agent": "Conteuse-App"
+    },
+    body: JSON.stringify(body)
+  });
+  
+  if (!response.ok) {
+    const errData = await response.text();
+    if (response.status === 401) {
+      throw new Error(`Erreur d'authentification GitHub: Le GITHUB_TOKEN est manquant ou invalide. Configurez-le dans les variables d'environnement.`);
+    }
+    throw new Error(`Failed to upload to Github: ${errData}`);
+  }
+}
+
+async function getStoriesFromGithub() {
+  const token = process.env.GITHUB_TOKEN;
+  const headers: any = {
+    "Accept": "application/vnd.github.v3+json",
+    "User-Agent": "Conteuse-App"
+  };
+  if (token) {
+    headers["Authorization"] = `token ${token}`;
+  }
+  
+  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/stories/stories.json?ref=${GITHUB_BRANCH}`;
+  const response = await fetch(url, { headers });
+  
+  if (response.status === 404) return [];
+  if (!response.ok) {
+     console.error("Erreur getStoriesFromGithub:", await response.text());
+     return [];
+  }
+  const data = (await response.json()) as any;
+  const content = Buffer.from(data.content, 'base64').toString("utf-8");
+  return JSON.parse(content);
+}
+
+async function addStoryToGithub(title: string, mp3Filename: string, thumbnailFilename?: string) {
+  let stories = await getStoriesFromGithub();
   
   const newStory = {
     id: randomUUID(),
     title: title || "Nouvelle histoire",
-    thumbnail: thumbnail || "https://images.unsplash.com/photo-1519098901909-b1553a1190af?auto=format&fit=crop&w=200&q=80",
-    url: url
+    thumbnail: thumbnailFilename ? `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/public/stories/${thumbnailFilename}` : "https://images.unsplash.com/photo-1519098901909-b1553a1190af?auto=format&fit=crop&w=200&q=80",
+    url: `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/public/stories/${mp3Filename}`
   };
   
   stories.push(newStory);
   
-  try {
-    fs.writeFileSync(storiesJsonPath, JSON.stringify(stories, null, 2), "utf-8");
-  } catch (err) {
-    console.error("Erreur écriture stories.json", err);
-  }
+  const contentBase64 = Buffer.from(JSON.stringify(stories, null, 2), "utf-8").toString("base64");
+  await uploadToGithub("public/stories/stories.json", contentBase64, `Add story: ${newStory.title}`);
   return newStory;
-};
+}
 
 // ==== ROUTES BACKEND ====
+
+app.get("/api/stories", async (req, res) => {
+  try {
+    const stories = await getStoriesFromGithub();
+    res.json(stories);
+  } catch(error) {
+    console.error("Erreur api/stories:", error);
+    res.status(500).json({ error: "Failed to fetch stories" });
+  }
+});
 
 // 1. ROUTE : INVENTER (Génération de texte)
 app.post("/api/generate-story", async (req, res) => {
@@ -153,10 +249,12 @@ app.post("/api/generate-audio", async (req, res) => {
     const audioPart = parts?.find(p => p.inlineData);
     
     let audioBuffer: Buffer;
+    let mimeType: string | undefined;
     
     if (audioPart && audioPart.inlineData) {
        // Cas standard : inlineData reçu
        audioBuffer = Buffer.from(audioPart.inlineData.data, "base64");
+       mimeType = audioPart.inlineData.mimeType;
     } else if (response.text) {
        // Fallback : dans certains modèles TTS, response.text contient la chaîne base64 ou binaire
        audioBuffer = Buffer.from(response.text, /^[A-Za-z0-9+/=]+$/.test(response.text) ? "base64" : "binary");
@@ -164,24 +262,44 @@ app.post("/api/generate-audio", async (req, res) => {
       throw new Error("No audio data received from Gemini");
     }
 
+    // DÉTECTION DU FORMAT RÉEL POUR FFMPEG
+    const header = audioBuffer.subarray(0, 12);
+    let isRawPcm = true;
+    
+    if (header.subarray(0, 4).toString('utf8') === 'RIFF') {
+      isRawPcm = false;
+    } else if (header.subarray(0, 3).toString('utf8') === 'ID3' || (header[0] === 0xFF && (header[1] & 0xE0) === 0xE0)) {
+      isRawPcm = false;
+    } else if (header.subarray(0, 4).toString('utf8') === 'OggS') {
+      isRawPcm = false;
+    } else if (header.subarray(0, 4).toString('utf8') === 'fLaC') {
+      isRawPcm = false;
+    }
+
     const fileId = randomUUID();
     const tempInputPath = path.join(tempDir, `${fileId}.tmp`);
+    const tempOutputPath = path.join(tempDir, `${fileId}.mp3`);
     const finalFilename = `${fileId}.mp3`;
-    const finalOutputPath = path.join(publicStoriesDir, finalFilename);
 
     // 1ère étape : écriture du tampon audio brut renvoyé par Gemini
     fs.writeFileSync(tempInputPath, audioBuffer);
 
-    // 2ème étape : conversion parfaite FFmpeg pour ESP32
-    await convertToEsp32Audio(tempInputPath, finalOutputPath);
+    // 2ème étape : conversion parfaite FFmpeg pour ESP32 vers rec. temporaire
+    await convertToEsp32Audio(tempInputPath, tempOutputPath, mimeType, isRawPcm);
 
-    // 3ème étape : nettoyage du fichier temporaire
+    // 3ème étape : Envoi à GitHub public via API
+    const mp3Base64 = fs.readFileSync(tempOutputPath).toString('base64');
+    await uploadToGithub(`public/stories/${finalFilename}`, mp3Base64, `Add TTS audio: ${finalFilename}`);
+
+    // Nettoyage fichiers temporaires
     if (fs.existsSync(tempInputPath)) {
       fs.unlinkSync(tempInputPath);
     }
+    if (fs.existsSync(tempOutputPath)) {
+      fs.unlinkSync(tempOutputPath);
+    }
 
-    const storyUrl = `/stories/${finalFilename}`;
-    const newStory = addStoryToJson(title, storyUrl);
+    const newStory = await addStoryToGithub(title, finalFilename);
 
     // Retour au client
     res.json({ 
@@ -208,38 +326,46 @@ app.post("/api/upload-audio", upload.fields([{ name: "audio", maxCount: 1 }, { n
     const fileId = randomUUID();
     
     // Traitement de l'audio
-    const tempInputPath = files.audio[0].path;
+    const originalExt = path.extname(files.audio[0].originalname);
+    const tempInputPath = files.audio[0].path + originalExt;
+    fs.renameSync(files.audio[0].path, tempInputPath); // renommer avec l'extension
+    const tempOutputPath = path.join(tempDir, `${fileId}.mp3`);
     const finalFilename = `${fileId}.mp3`;
-    const finalOutputPath = path.join(publicStoriesDir, finalFilename);
 
     // Repasser le fichier uploadé à la moulinette FFmpeg pour garantir
     // qu'il sera lisible par l'ESP32
-    await convertToEsp32Audio(tempInputPath, finalOutputPath);
+    await convertToEsp32Audio(tempInputPath, tempOutputPath, files.audio[0].mimetype, false);
 
-    // Nettoyer le fichier temporaire de multer
-    if (fs.existsSync(tempInputPath)) {
-      fs.unlinkSync(tempInputPath);
-    }
+    // Envoi de l'audio converti à GitHub public via API
+    const mp3Base64 = fs.readFileSync(tempOutputPath).toString('base64');
     
-    let thumbnailUrl;
+    // Envoi de l'audio à GitHub public via API
+    await uploadToGithub(`public/stories/${finalFilename}`, mp3Base64, `Upload audio: ${finalFilename}`);
+
+    // Nettoyer les fichiers temporaires audio
+    if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
+    if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+    
+    let thumbnailFilename;
     // Traitement de la miniature (si fournie)
     if (files.thumbnail && files.thumbnail[0]) {
        const thumbExt = path.extname(files.thumbnail[0].originalname) || '.jpg';
-       const thumbFilename = `${fileId}${thumbExt}`;
-       const thumbPath = path.join(publicStoriesDir, thumbFilename);
-       fs.renameSync(files.thumbnail[0].path, thumbPath);
-       thumbnailUrl = `/stories/${thumbFilename}`;
+       thumbnailFilename = `${fileId}${thumbExt}`;
+       const thumbBase64 = fs.readFileSync(files.thumbnail[0].path).toString('base64');
+       await uploadToGithub(`public/stories/${thumbnailFilename}`, thumbBase64, `Upload thumbnail: ${thumbnailFilename}`);
+       
+       // Nettoyer fichier temporaire miniature
+       if (fs.existsSync(files.thumbnail[0].path)) fs.unlinkSync(files.thumbnail[0].path);
     }
 
-    const storyUrl = `/stories/${finalFilename}`;
-    const newStory = addStoryToJson(title, storyUrl, thumbnailUrl);
+    const newStory = await addStoryToGithub(title, finalFilename, thumbnailFilename);
 
     res.json({ 
       success: true, 
       story: newStory
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erreur /api/upload-audio:", error);
     // En cas d'erreur de la moulinette, on nettoie quand même le temp
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
@@ -249,11 +375,22 @@ app.post("/api/upload-audio", upload.fields([{ name: "audio", maxCount: 1 }, { n
     if (files && files.thumbnail && files.thumbnail[0] && fs.existsSync(files.thumbnail[0].path)) {
       fs.unlinkSync(files.thumbnail[0].path);
     }
-    res.status(500).json({ error: "Failed to process the uploaded audio file" });
+    res.status(500).json({ error: error.message || "Failed to process the uploaded audio file" });
   }
 });
 
 // ==== DEMARRAGE VITE & EXPRESS ====
+
+// Custom error handler pour les routes API
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.path.startsWith('/api')) {
+    console.error("API Error middleware intercepted:", err);
+    res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
+  } else {
+    next(err);
+  }
+});
+
 // Cette partie assure que l'application Vite fonctionne en mode dev
 // à côté de vos routes d'API, sur un seul port (3000)
 async function startServer() {
