@@ -16,5 +16,11 @@
     "title": "Jack et le haricot magique",
     "thumbnail": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/8e36863c-7c10-470e-af2f-42b516c96a24.png",
     "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/8e36863c-7c10-470e-af2f-42b516c96a24.mp3"
+  },
+  {
+    "id": "44f02277-08f3-4df6-b985-7d29f464e68a",
+    "title": "La Princesse Naëlys et le Mystère du Doudou Lapin",
+    "thumbnail": "https://images.unsplash.com/photo-1519098901909-b1553a1190af?auto=format&fit=crop&w=200&q=80",
+    "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/e5d5f94a-60fb-47f9-9e55-5e6fbf116fe2.mp3"
   }
 ]
