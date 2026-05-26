@@ -6,6 +6,11 @@ export function LibraryView() {
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [playingStoryId, setPlayingStoryId] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [savedPositions, setSavedPositions] = useState<Record<string, number>>({});
+  
 
   useEffect(() => {
     fetch("/api/stories")
@@ -24,18 +29,83 @@ export function LibraryView() {
       });
   }, []);
 
-  const espRequest = async (action: string, url?: string) => {
+  // Gérer le compteur
+  useEffect(() => {
+    if (!playingStoryId || isPaused) return;
+
+    const interval = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [playingStoryId, isPaused]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const espIp = "http://192.168.1.100"; // Ton IP ESP32
+
+  const handlePlay = async (storyId: string, url: string) => {
     try {
-      const espIp = "http://192.168.1.100";
-      const fullUrl = url
-        ? `${espIp}/${action}?url=${encodeURIComponent(url)}`
-        : `${espIp}/${action}`;
+      const savedSec = savedPositions[storyId];
+      let fullUrl = `${espIp}/play?url=${encodeURIComponent(url)}`;
       
-      // We use no-cors because the ESP32 might not send CORS headers
-      await fetch(fullUrl, { mode: "no-cors" });
+      // Si on a des secondes sauvegardées, on les ajoute à la requête
+      if (savedSec && savedSec > 0) {
+        fullUrl += `&sec=${savedSec}`;
+      }
+      
+      // Plus de mode "no-cors", l'ESP32 l'autorise nativement maintenant
+      await fetch(fullUrl);
+      
+      // Mettre à jour l'état local
+      if (playingStoryId === storyId) {
+        setIsPaused(false);
+      } else {
+        setPlayingStoryId(storyId);
+        setElapsed(0);
+        setIsPaused(false);
+      }
     } catch (err) {
       console.error(err);
-      alert("Erreur de communication avec la conteuse (Vérifiez le Wifi).");
+    }
+  };
+
+  const handlePause = async (storyId: string) => {
+    try {
+      const response = await fetch(`${espIp}/pause`);
+      const data = await response.json();
+      
+      // On sauvegarde les secondes renvoyées par l'ESP32
+      if (data.position) {
+        setSavedPositions(prev => ({ ...prev, [storyId]: data.position }));
+      }
+      
+      setIsPaused(true);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleStop = async (storyId: string) => {
+    try {
+      await fetch(`${espIp}/stop`);
+      
+      // On efface les secondes sauvegardées pour repartir de zéro
+      setSavedPositions(prev => {
+        const newPositions = { ...prev };
+        delete newPositions[storyId];
+        return newPositions;
+      });
+      
+      setPlayingStoryId(null);
+      setElapsed(0);
+      setIsPaused(false);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -71,21 +141,26 @@ export function LibraryView() {
                 <h3 className="font-semibold text-gray-800 truncate mb-2">
                   {story.title}
                 </h3>
+                {playingStoryId === story.id && (
+                  <div className="text-sm font-mono text-purple-600 mb-2">
+                    {formatTime(elapsed)}
+                  </div>
+                )}
                 <div className="flex space-x-2">
                   <button
-                    onClick={() => espRequest("play", story.url)}
+                    onClick={() => handlePlay(story.id, story.url)}
                     className="p-2 bg-purple-100 hover:bg-purple-200 text-purple-600 rounded-full transition-colors"
                   >
                     <Play className="w-4 h-4 fill-current" />
                   </button>
-                  <button
-                    onClick={() => espRequest("pause")}
+                  {/* <button
+                    onClick={() => handlePause(story.id)}
                     className="p-2 bg-purple-100 hover:bg-purple-200 text-purple-600 rounded-full transition-colors"
                   >
                     <Pause className="w-4 h-4 fill-current" />
-                  </button>
+                  </button> */}
                   <button
-                    onClick={() => espRequest("stop")}
+                    onClick={() => handleStop(story.id)}
                     className="p-2 bg-purple-100 hover:bg-purple-200 text-purple-600 rounded-full transition-colors"
                   >
                     <Square className="w-4 h-4 fill-current" />
