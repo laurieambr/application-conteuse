@@ -14,9 +14,6 @@ import { createServer as createViteServer } from "vite";
 // Charger les variables depuis .env.local en priorité, puis .env
 dotenv.config({ path: '.env.local' });
 
-console.log("Token GitHub détecté :", process.env.GITHUB_TOKEN ? "OUI" : "NON");
-console.log(process.env.GITHUB_TOKEN);
-
 // Définir le chemin vers l'exécutable ffmpeg statique
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic);
