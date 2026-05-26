@@ -80,6 +80,7 @@ const convertToEsp32Audio = (inputPath: string, outputPath: string, inputMimeTyp
       .audioFrequency(44100)      // 44100 Hz
       .outputOptions([
         "-map_metadata -1",       // Suppression de toutes les métadonnées (ID3, etc.)
+        "-vn"                     // Supprime les images/pochettes d'album intégrées !
       ])
       .save(outputPath)
       .on("end", () => resolve())
