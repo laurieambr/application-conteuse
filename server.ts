@@ -207,6 +207,98 @@ app.get("/api/stories", async (req, res) => {
   }
 });
 
+// PUT: Modifier une histoire (titre, miniature)
+app.put("/api/stories", async (req, res) => {
+  try {
+    const { id, title, thumbnail, url } = req.body;
+    
+    if (!id) {
+      return res.status(400).json({ error: "ID requis" });
+    }
+
+    // 1. On lit depuis GitHub !
+    const storiesData = await getStoriesFromGithub();
+    
+    // 2. On trouve l'histoire
+    const storyIndex = storiesData.findIndex((s: any) => s.id === id);
+    if (storyIndex === -1) {
+      return res.status(404).json({ error: "Histoire non trouvée" });
+    }
+
+    // 3. On met à jour
+    storiesData[storyIndex] = {
+      ...storiesData[storyIndex],
+      title: title || storiesData[storyIndex].title,
+      thumbnail: thumbnail || storiesData[storyIndex].thumbnail,
+      url: url || storiesData[storyIndex].url // Au cas où
+    };
+
+    // 4. On sauvegarde sur GitHub ! (Plus d'écriture locale)
+    const contentBase64 = Buffer.from(JSON.stringify(storiesData, null, 2)).toString('base64');
+    await uploadToGithub("public/stories/stories.json", contentBase64, `Modification de l'histoire: ${title || id}`);
+
+    res.json(storiesData[storyIndex]);
+  } catch (error) {
+    console.error("Erreur PUT /api/stories:", error);
+    res.status(500).json({ error: "Failed to update story" });
+  }
+});
+
+// DELETE: Supprimer une histoire
+app.delete("/api/stories/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. On lit depuis GitHub !
+    const storiesData = await getStoriesFromGithub();
+    
+    // 2. On filtre
+    const filteredStories = storiesData.filter((s: any) => s.id !== id);
+    
+    if (filteredStories.length === storiesData.length) {
+      return res.status(404).json({ error: "Histoire non trouvée" });
+    }
+
+    // 3. On sauvegarde sur GitHub ! (Plus d'écriture locale)
+    const contentBase64 = Buffer.from(JSON.stringify(filteredStories, null, 2)).toString('base64');
+    await uploadToGithub("public/stories/stories.json", contentBase64, `Suppression d'une histoire`);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erreur DELETE /api/stories:", error);
+    res.status(500).json({ error: "Failed to delete story" });
+  }
+});
+
+// POST: Uploader une miniature et obtenir son URL GitHub
+app.post("/api/upload-thumbnail", upload.single("thumbnail"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Aucun fichier fourni" });
+    }
+
+    const fileId = randomUUID();
+    const thumbExt = path.extname(req.file.originalname) || '.jpg';
+    const thumbnailFilename = `${fileId}${thumbExt}`;
+    
+    const thumbBase64 = fs.readFileSync(req.file.path).toString('base64');
+    await uploadToGithub(`public/stories/${thumbnailFilename}`, thumbBase64, `Upload thumbnail: ${thumbnailFilename}`);
+    
+    // Nettoyer le fichier temporaire
+    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    
+    const thumbnailUrl = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_BRANCH}/public/stories/${thumbnailFilename}`;
+    
+    res.json({ 
+      success: true, 
+      url: thumbnailUrl
+    });
+  } catch (error) {
+    console.error("Erreur /api/upload-thumbnail:", error);
+    res.status(500).json({ error: "Failed to upload thumbnail" });
+  }
+});
+
 // 1. ROUTE : INVENTER (Génération de texte)
 app.post("/api/generate-story", async (req, res) => {
   try {
