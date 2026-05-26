@@ -1,23 +1,5 @@
 [
   {
-    "id": "1",
-    "title": "L'aventure de Léo",
-    "thumbnail": "https://images.unsplash.com/photo-1519098901909-b1553a1190af?auto=format&fit=crop&w=200&q=80",
-    "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-  },
-  {
-    "id": "2",
-    "title": "La forêt magique",
-    "thumbnail": "https://images.unsplash.com/photo-1542273917363-3b1817f69a56?auto=format&fit=crop&w=200&q=80",
-    "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
-  },
-  {
-    "id": "a5a12a54-9ecc-455e-84f1-fe4c6c5946a8",
-    "title": "Jack et le haricot magique",
-    "thumbnail": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/8e36863c-7c10-470e-af2f-42b516c96a24.png",
-    "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/8e36863c-7c10-470e-af2f-42b516c96a24.mp3"
-  },
-  {
     "id": "44f02277-08f3-4df6-b985-7d29f464e68a",
     "title": "La Princesse Naëlys et le Mystère du Doudou Lapin",
     "thumbnail": "https://images.unsplash.com/photo-1519098901909-b1553a1190af?auto=format&fit=crop&w=200&q=80",
