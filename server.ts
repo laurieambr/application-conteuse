@@ -3,11 +3,16 @@ import cors from "cors";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
+import dotenv from "dotenv";
+dotenv.config();
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { randomUUID } from "crypto";
 import { createServer as createViteServer } from "vite";
+
+console.log("Token GitHub détecté :", process.env.GITHUB_TOKEN ? "OUI" : "NON");
+console.log(process.env.GITHUB_TOKEN);
 
 // Définir le chemin vers l'exécutable ffmpeg statique
 if (ffmpegStatic) {
@@ -88,12 +93,14 @@ const GITHUB_REPO = 'application-conteuse';
 const GITHUB_BRANCH = 'main';
 
 async function getGithubFileSha(path: string): Promise<string | null> {
-  const token = process.env.GITHUB_TOKEN;
+  const token = (process.env.GITHUB_TOKEN || "").trim();
   if (!token) throw new Error("GITHUB_TOKEN manquant ou non défini dans les secrets");
+  let authHeader = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+  
   const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_BRANCH}`;
   const response = await fetch(url, {
     headers: {
-      "Authorization": `token ${token}`,
+      "Authorization": authHeader,
       "Accept": "application/vnd.github.v3+json",
       "User-Agent": "Conteuse-App"
     }
@@ -106,8 +113,13 @@ async function getGithubFileSha(path: string): Promise<string | null> {
 }
 
 async function uploadToGithub(path: string, contentBase64: string, message: string) {
-  const token = process.env.GITHUB_TOKEN;
+  const token = (process.env.GITHUB_TOKEN || "").trim();
   if (!token) throw new Error("GITHUB_TOKEN manquant");
+  let authHeader = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+  if (token.startsWith("ghp_")) {
+    authHeader = `Bearer ${token}`;
+  }
+
   const sha = await getGithubFileSha(path);
   const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
   
@@ -124,7 +136,7 @@ async function uploadToGithub(path: string, contentBase64: string, message: stri
   const response = await fetch(url, {
     method: 'PUT',
     headers: {
-      "Authorization": `token ${token}`,
+      "Authorization": authHeader,
       "Accept": "application/vnd.github.v3+json",
       "Content-Type": "application/json",
       "User-Agent": "Conteuse-App"
@@ -135,20 +147,21 @@ async function uploadToGithub(path: string, contentBase64: string, message: stri
   if (!response.ok) {
     const errData = await response.text();
     if (response.status === 401) {
-      throw new Error(`Erreur d'authentification GitHub: Le GITHUB_TOKEN est manquant ou invalide. Configurez-le dans les variables d'environnement.`);
+      throw new Error(`Erreur d'authentification GitHub: Le GITHUB_TOKEN est invalide (401). Jeton reçu : ${token.substring(0, 4)}... Vérifiez vos permissions de token ou la configuration des variables d'environnement.`);
     }
     throw new Error(`Failed to upload to Github: ${errData}`);
   }
 }
 
 async function getStoriesFromGithub() {
-  const token = process.env.GITHUB_TOKEN;
+  const token = (process.env.GITHUB_TOKEN || "").trim();
   const headers: any = {
     "Accept": "application/vnd.github.v3+json",
     "User-Agent": "Conteuse-App"
   };
   if (token) {
-    headers["Authorization"] = `token ${token}`;
+    let authHeader = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+    headers["Authorization"] = authHeader;
   }
   
   const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/public/stories/stories.json?ref=${GITHUB_BRANCH}`;
@@ -367,11 +380,14 @@ app.post("/api/upload-audio", upload.fields([{ name: "audio", maxCount: 1 }, { n
 
   } catch (error: any) {
     console.error("Erreur /api/upload-audio:", error);
-    // En cas d'erreur de la moulinette, on nettoie quand même le temp
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-    if (files && files.audio && files.audio[0] && fs.existsSync(files.audio[0].path)) {
-      fs.unlinkSync(files.audio[0].path);
+    // Nettoyer les fichiers temporaires même en cas d'erreur
+    if (typeof tempInputPath === 'string' && fs.existsSync(tempInputPath)) {
+      fs.unlinkSync(tempInputPath);
     }
+    if (typeof tempOutputPath === 'string' && fs.existsSync(tempOutputPath)) {
+      fs.unlinkSync(tempOutputPath);
+    }
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     if (files && files.thumbnail && files.thumbnail[0] && fs.existsSync(files.thumbnail[0].path)) {
       fs.unlinkSync(files.thumbnail[0].path);
     }
@@ -380,6 +396,11 @@ app.post("/api/upload-audio", upload.fields([{ name: "audio", maxCount: 1 }, { n
 });
 
 // ==== DEMARRAGE VITE & EXPRESS ====
+
+// Catch all unregistered API routes
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `API route non trouvée : ${req.method} ${req.path}` });
+});
 
 // Custom error handler pour les routes API
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
