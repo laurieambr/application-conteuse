@@ -10,5 +10,11 @@
     "title": "La forêt magique",
     "thumbnail": "https://images.unsplash.com/photo-1542273917363-3b1817f69a56?auto=format&fit=crop&w=200&q=80",
     "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
+  },
+  {
+    "id": "a5a12a54-9ecc-455e-84f1-fe4c6c5946a8",
+    "title": "Jack et le haricot magique",
+    "thumbnail": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/8e36863c-7c10-470e-af2f-42b516c96a24.png",
+    "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/8e36863c-7c10-470e-af2f-42b516c96a24.mp3"
   }
 ]
