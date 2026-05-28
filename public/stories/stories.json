@@ -34,5 +34,11 @@
     "title": "La Maison aux Merveilles et le Doudou Scintillant",
     "thumbnail": "https://images.unsplash.com/photo-1519098901909-b1553a1190af?auto=format&fit=crop&w=200&q=80",
     "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/838e0d11-2f9e-4f04-9feb-27c7db0cc020.mp3"
+  },
+  {
+    "id": "68ff9b91-68ba-431f-951e-c15164e5b2a9",
+    "title": "Finette la renarde magique",
+    "thumbnail": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/b28e5182-92b0-45ad-85a1-e8e7dd90db1f.png",
+    "url": "https://raw.githubusercontent.com/laurieambr/application-conteuse/main/public/stories/b28e5182-92b0-45ad-85a1-e8e7dd90db1f.mp3"
   }
 ]
